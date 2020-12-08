@@ -8,6 +8,7 @@ A class providing an interface for accessing header, interferogram and spectrum 
 from __future__ import print_function, division
 import os, struct
 import numpy as np
+import ipdb
 
 class ftsreader():
     '''Python class to interact with FTS files.\n\n
@@ -35,8 +36,8 @@ class ftsreader():
     def search_header_par(self, par):
         '''search the header for parameter <par> and return datablock designation '''
         pars = []
-        for i in self.header.keys():
-            for j in self.header[i].keys():
+        for i in list(self.header.keys()):
+            for j in list(self.header[i].keys()):
                 if par == j:
                     pars.append(i)
         if len(pars)==1:
@@ -70,6 +71,7 @@ class ftsreader():
                         '4': ' SpSm',
                         '8': ' IgSm',
                         '20': ' TrSm',
+                        '12': ' PhSm',
                         b'\x84': ' SpSm/2.Chn.', # some weird stuff going on with python3 decoding here, use binary representation
                         b'\x88': ' IgSm/2.Chn.'}
         self.fs = {}
@@ -131,7 +133,7 @@ class ftsreader():
                             t = struct.unpack('%1is'%(2*length), data)[0].decode('ISO-8859-1')
                             t2 = ''
                             for ji in t: # deal with zeros in byte array
-                                if ji!='\x00' and (type(ji)==str or type(ji)==unicode):
+                                if ji!='\x00' and type(ji)==str: # in python2 you might want to add ... or type(ji)=='unicode'):
                                     t2 += ji
                                 else:
                                     break
@@ -266,6 +268,9 @@ class ftsreader():
         if block == 'Data Block TrSm':
             self.log.append('Getting trm data block')
             xax = np.linspace(self.header['Data Parameters TrSm']['FXV'], self.header['Data Parameters TrSm']['LXV'], len(yax))
+        if block == 'Data Block PhSm':
+            self.log.append('Getting pha data block')
+            xax = np.linspace(self.header['Data Parameters PhSm']['FXV'], self.header['Data Parameters PhSm']['LXV'], len(yax))
         return xax, yax
 
     def get_slices(self, path):
@@ -340,10 +345,12 @@ class ftsreader():
 
     def search_block(self, blockname):
         '''Searches a <blockname> within the identifies FTS file structure. Returns dictionary entry of the block <blockname>.'''
-        if blockname in self.fs.keys():
+        #ipdb.set_trace()
+        if blockname in list(self.fs.keys()):
+            #print(blockname)
             return self.fs[blockname]
         else:
-            self.log.append('Could not find '+blockname+' in self.fs.keys()')
+            self.log.append('Could not find '+str(blockname)+' in self.fs.keys()')
 
     def print_fs(self):
         '''Printing the structure of the FTS file. This includes found data blocks, their binary lengths and offsets.'''
@@ -390,7 +397,7 @@ class ftsreader():
         else:
             return False
 
-    def __init__(self, path, verbose=False, getspc=False, getifg=False, gettrm=False, getslices=False):
+    def __init__(self, path, verbose=False, getspc=False, getifg=False, gettrm=False, getpha=False, getslices=False):
         self.log = []
         self.status = True
         self.verbose = verbose
@@ -424,6 +431,11 @@ class ftsreader():
                     self.trmwvn, self.trm = self.get_datablocks('Data Block TrSm')
                 else:
                     self.log.append('No Transmissionspectrum requested or not found ... skipping.')
+                # get ifg if requested
+                if getpha and self.has_block('Data Block PhSm'):
+                    self.phawvn, self.pha = self.get_datablocks('Data Block PhSm')
+                else:
+                    self.log.append('No Phasespectrum requested or not found ... skipping.')
                 # get ifg if requested
                 if getifg and self.has_block('Data Block IgSm'):
                     self.ifgopd, self.ifg = self.get_datablocks('Data Block IgSm')

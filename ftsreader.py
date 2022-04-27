@@ -8,6 +8,7 @@ A class providing an interface for accessing header, interferogram and spectrum 
 from __future__ import print_function, division
 import os, struct
 import numpy as np
+#import ipdb
 
 class ftsreader():
     '''Python class to interact with FTS files.\n\n
@@ -35,8 +36,8 @@ class ftsreader():
     def search_header_par(self, par):
         '''search the header for parameter <par> and return datablock designation '''
         pars = []
-        for i in self.header.keys():
-            for j in self.header[i].keys():
+        for i in list(self.header.keys()):
+            for j in list(self.header[i].keys()):
                 if par == j:
                     pars.append(i)
         if len(pars)==1:
@@ -131,7 +132,7 @@ class ftsreader():
                             t = struct.unpack('%1is'%(2*length), data)[0].decode('ISO-8859-1')
                             t2 = ''
                             for ji in t: # deal with zeros in byte array
-                                if ji!='\x00' and (type(ji)==str or type(ji)==unicode):
+                                if ji!='\x00' and type(ji)==str: # in python2 you might want to add ... or type(ji)=='unicode'):
                                     t2 += ji
                                 else:
                                     break
@@ -340,10 +341,12 @@ class ftsreader():
 
     def search_block(self, blockname):
         '''Searches a <blockname> within the identifies FTS file structure. Returns dictionary entry of the block <blockname>.'''
-        if blockname in self.fs.keys():
+        #ipdb.set_trace()
+        if blockname in list(self.fs.keys()):
+            #print(blockname)
             return self.fs[blockname]
         else:
-            self.log.append('Could not find '+blockname+' in self.fs.keys()')
+            self.log.append('Could not find '+str(blockname)+' in self.fs.keys()')
 
     def print_fs(self):
         '''Printing the structure of the FTS file. This includes found data blocks, their binary lengths and offsets.'''
@@ -451,8 +454,12 @@ if __name__ == '__main__':
     import sys
     s = ftsreader(sys.argv[1], verbose=True, getspc=True, getifg=True)
     s.print_header()
-    print(s.fs)
+    #print(s.fs)
     fig, (ax1, ax2) = plt.subplots(2)
-    ax1.plot(s.spcwvn, s.spc)
-    ax2.plot(s.ifg)
+    try:
+        ax1.plot(s.spcwvn, s.spc)
+    except: pass
+    try:
+        ax2.plot(s.ifg)
+    except: pass
     plt.show()

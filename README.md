@@ -10,3 +10,17 @@ An additional script *spc_checker.py* provides a PyQt5 graphical user interface 
 
 Usage:
     python spc_checker.py [interferograms/spectra folder] [path to textfile for saving selection list]
+
+
+# tools
+
+contains several tools to work with the spectra read by ftsreader
+load: import tools
+
+spec = average(<list of files>, av_spc, av_ifg) averages spectra or interferograms
+	      	 	 x-axis must be the same
+			 result is a two dimnsional array
+spec = divide (spec1. spec2, interpolate) calculates spec1/spec2,
+       	      	      	     if interpolate = True: spec2 is interpolated to the
+       	       	      	     		       		   wavenumber-axis of spec1
+		             if normailse = True: spectrum is normalised to be between 0 1nd 1

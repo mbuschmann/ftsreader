@@ -71,6 +71,7 @@ class ftsreader():
                         '4': ' SpSm',
                         '8': ' IgSm',
                         '20': ' TrSm',
+                        '12': ' PhSm',
                         b'\x84': ' SpSm/2.Chn.', # some weird stuff going on with python3 decoding here, use binary representation
                         b'\x88': ' IgSm/2.Chn.'}
         self.fs = {}
@@ -267,6 +268,9 @@ class ftsreader():
         if block == 'Data Block TrSm':
             self.log.append('Getting trm data block')
             xax = np.linspace(self.header['Data Parameters TrSm']['FXV'], self.header['Data Parameters TrSm']['LXV'], len(yax))
+        if block == 'Data Block PhSm':
+            self.log.append('Getting pha data block')
+            xax = np.linspace(self.header['Data Parameters PhSm']['FXV'], self.header['Data Parameters PhSm']['LXV'], len(yax))
         return xax, yax
 
     def get_slices(self, path):
@@ -393,7 +397,7 @@ class ftsreader():
         else:
             return False
 
-    def __init__(self, path, verbose=False, getspc=False, getifg=False, gettrm=False, getslices=False):
+    def __init__(self, path, verbose=False, getspc=False, getifg=False, gettrm=False, getpha=False, getslices=False):
         self.log = []
         self.status = True
         self.verbose = verbose
@@ -427,6 +431,11 @@ class ftsreader():
                     self.trmwvn, self.trm = self.get_datablocks('Data Block TrSm')
                 else:
                     self.log.append('No Transmissionspectrum requested or not found ... skipping.')
+                # get ifg if requested
+                if getpha and self.has_block('Data Block PhSm'):
+                    self.phawvn, self.pha = self.get_datablocks('Data Block PhSm')
+                else:
+                    self.log.append('No Phasespectrum requested or not found ... skipping.')
                 # get ifg if requested
                 if getifg and self.has_block('Data Block IgSm'):
                     self.ifgopd, self.ifg = self.get_datablocks('Data Block IgSm')

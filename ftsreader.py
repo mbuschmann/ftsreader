@@ -107,6 +107,7 @@ class ftsreader():
         #print('read structure\t%1.5f'%(time.time()-t))
 
     def getfileobject(self):
+        # this is used for in-memory-only fts file objects
         if self.filemode == 'hdd':
             fi = open(self.path, 'rb')
         elif self.filemode == 'bytesfromfile':

@@ -6,9 +6,8 @@ A class providing an interface for accessing header, interferogram and spectrum 
 '''
 
 from __future__ import print_function, division
-import os, struct
+import os, struct, io, time
 import numpy as np
-#import ipdb
 
 class ftsreader():
     '''Python class to interact with FTS files.\n\n
@@ -57,6 +56,7 @@ class ftsreader():
             return None
 
     def read_structure(self):
+        #t = time.time()
         '''Read the structure of the file and write to ftsreader.fs'''
         # known blocks so far, there is always a block zero, that is still unidentified
         self.__blocknames =    {'160': 'Sample Parameters',
@@ -75,7 +75,8 @@ class ftsreader():
                         b'\x84': ' SpSm/2.Chn.', # some weird stuff going on with python3 decoding here, use binary representation
                         b'\x88': ' IgSm/2.Chn.'}
         self.fs = {}
-        with open(self.path, 'rb') as f:
+        fi = self.getfileobject()
+        with fi as f: #open(self.path, 'rb') as f:
             f.seek(0)
             self.log.append('Reading structure of file')
             # read beginning of file to assert magic number, total number of blocks and first offset
@@ -102,9 +103,25 @@ class ftsreader():
                     pass
                 #print(hdrblockname, type(hdrblockname))
                 self.fs[hdrblockname] = {'blocktype': blocktype, 'blocktype2': blocktype2, 'length': length, 'offset': offset2}
+        fi.close
+        #print('read structure\t%1.5f'%(time.time()-t))
+
+    def getfileobject(self):
+        if self.filemode == 'hdd':
+            fi = open(self.path, 'rb')
+        elif self.filemode == 'bytesfromfile':
+            with open(self.path, 'rb') as f:
+                data = f.read(17428)
+            fi = io.BytesIO(data)
+        elif self.filemode == 'mem':
+            fi = io.BytesIO(self.streamdata)
+        else:
+            exit('filemode', self.filemode, ' not supported')
+        return fi
 
     def getparamsfromblock(self, offset, length, full=False):
         '''Read all parameters in a block at binary <length> and <offset> and return as dictionary. On request also include binary length and offset of that parameter.'''
+        #tt = time.time()
         params = {}
         i=0
         test = True
@@ -150,6 +167,7 @@ class ftsreader():
                         print (e)
                 else:
                     test = False
+        #print('getparamsfromblock\t%1.5f'%(time.time()-tt))
         if full:
             return fullblock
         else:
@@ -157,6 +175,7 @@ class ftsreader():
 
     def read_header(self):
         '''Read the header and return as a dictionary.'''
+        #t = time.time()
         self.log.append('Reading Header ...')
         self.read_structure()
         self.header = {}
@@ -172,6 +191,7 @@ class ftsreader():
                         print(e)
                         self.log.append(e)
             else: pass
+        #print('read_header\t%1.5f'%(time.time()-t))
         return 0
 
     def fwdifg(self):
@@ -243,18 +263,21 @@ class ftsreader():
 
     def get_block(self, pointer, length):
         '''Get data block from ftsreader.path at <pointer> with length <length>.'''
+        #t = time.time()
         self.log.append('Getting data block at '+str(pointer)+' with length '+str(length))
         with open(self.path, 'rb') as f:
             f.seek(pointer)
             dat = np.array(struct.unpack('%1if'%(length), f.read(length*4)))
+        #print('get_block\t%1.5f'%(time.time()-t))
         return dat
 
     def get_datablocks(self, block):
         '''Read a datablock named <block> and retrieve x- and y-axis np.arrays from it.'''
+        #t = time.time()
         self.log.append('Getting data blocks')
         yax = np.array(self.get_block(self.search_block(block)['offset'], self.search_block(block)['length']))
         #print(block)
-        if block == 'Data Block IgSm':
+        if block == 'Data Block IgSm' or block == 'Data Block':
             self.log.append('Getting ifg data block')
             # crude estimate of opd axis, only for illustratiion purposes, zpd's not included in calculation, and triangular apod. assumption -> 0.9
             xax = np.linspace(0,2*0.9/float(self.header['Acquisition Parameters']['RES']), len(yax))
@@ -271,6 +294,7 @@ class ftsreader():
         if block == 'Data Block PhSm':
             self.log.append('Getting pha data block')
             xax = np.linspace(self.header['Data Parameters PhSm']['FXV'], self.header['Data Parameters PhSm']['LXV'], len(yax))
+        #print('get_datablocks\t%1.5f'%(time.time()-t))
         return xax, yax
 
     def get_slices(self, path):
@@ -321,6 +345,7 @@ class ftsreader():
 
     def test_if_ftsfile(self):
         '''Check the initialized filename for FTS magic number.'''
+        #t = time.time()
         self.log.append('testing if FTS file')
         # same 4-byte binary representation found on all valid FTS files ... must be magic
         ftsmagicval = b'\n\n\xfe\xfe'
@@ -342,12 +367,15 @@ class ftsreader():
             self.log.append(e)
             self.status=False
             self.isftsfile = False
+        #print('test_if_ftsfile\t%1.5f'%(time.time()-t))
 
     def search_block(self, blockname):
         '''Searches a <blockname> within the identifies FTS file structure. Returns dictionary entry of the block <blockname>.'''
         #ipdb.set_trace()
+        #t = time.time()
         if blockname in list(self.fs.keys()):
             #print(blockname)
+            #print('search_block\t%1.5f'%(time.time()-t))
             return self.fs[blockname]
         else:
             self.log.append('Could not find '+str(blockname)+' in self.fs.keys()')
@@ -397,11 +425,14 @@ class ftsreader():
         else:
             return False
 
-    def __init__(self, path, verbose=False, getspc=False, getifg=False, gettrm=False, getpha=False, getslices=False):
+    def __init__(self, path, verbose=False, getspc=False, getifg=False, getdoubleifg=False, gettrm=False, getpha=False, getslices=False, filemode='hdd', streamdata=None):
+        t1 = time.time()
         self.log = []
         self.status = True
         self.verbose = verbose
         self.path = path
+        self.filemode = filemode
+        self.streamdata = streamdata
         if self.verbose:
             print('Initializing ...')
         self.log.append('Initializing')
@@ -441,6 +472,12 @@ class ftsreader():
                     self.ifgopd, self.ifg = self.get_datablocks('Data Block IgSm')
                 else:
                     self.log.append('No Interferogram requested or not found ... skipping.')
+                # get two ifgs if requested
+                if getdoubleifg and (self.has_block('Data Block IgSm') and self.has_block('Data Block')):
+                    self.ifgopd, self.ifg = self.get_datablocks('Data Block IgSm')
+                    self.ifgopd2, self.ifg2 = self.get_datablocks('Data Block')
+                else:
+                    self.log.append('No double interferogram requested or not found ... skipping.')
                 # try getting slices if requested
                 if getslices:
                     self.get_slices(path)
@@ -455,20 +492,32 @@ class ftsreader():
         except Exception as e:
             self.log.append('Problem with '+str(e))
             print('Error while processing '+path+' ... check self.log or do self.print_log()')
+        #print('init\t%1.5f'%(time.time()-t1))
+
 
 
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import sys
+    #ttt = time.time()
     s = ftsreader(sys.argv[1], verbose=True, getspc=True, getifg=True)
+    #s = ftsreader(sys.argv[1], verbose=True)#, getslices=True)
+    #print(len(s.spc), len(s.ifg))
+    #print('total\t%1.5f'%(time.time()-ttt))
+    s.print_log()
     s.print_header()
+    #print(s.get_header_par('RES'))
     #print(s.fs)
-    fig, (ax1, ax2) = plt.subplots(2)
+    #fig, (ax1, ax2) = plt.subplots(2)
+    fig, ax1 = plt.subplots(1)
+    #try:
+    #    ax1.plot(s.ifg)
+    #except: pass
     try:
         ax1.plot(s.spcwvn, s.spc)
     except: pass
-    try:
-        ax2.plot(s.ifg)
-    except: pass
+    #try:
+    #    ax2.plot(s.ifg)
+    #except: pass
     plt.show()

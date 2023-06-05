@@ -11,7 +11,7 @@ from ftsreader import ftsreader
 import numpy as np
 
 class Speccheck(QtWidgets.QMainWindow):
-    def __init__(self, folder, savepath):
+    def __init__(self, readlist, savepath):
         super().__init__()
         self.folder = os.path.abspath(folder)
         self.savepath = os.path.abspath(savepath)
@@ -141,10 +141,7 @@ class Speccheck(QtWidgets.QMainWindow):
         self.dirlist2 = l.copy()
         #print(self.dirlist)
         self.i = 0
-        #if i<len(l):
         self.filename = self.dirlist[self.i]
-        #else:
-        #self.filename = ''
 
     def getfolder(self):
         self.folder = str(QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory"))
@@ -220,9 +217,7 @@ class Speccheck(QtWidgets.QMainWindow):
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     if len(sys.argv)==3:
-        ex = Speccheck(sys.argv[1], sys.argv[2])
-    elif len(sys.argv)==2:
         ex = Speccheck(sys.argv[1], './spc_list_selection'+time.strftime('%Y%m%d%H%M')+'.txt')
     else:
-        ex = Speccheck('./', './spc_list_selection'+time.strftime('%Y%m%d%H%M')+'.txt')
+        print('Options:\n\t spc_listchecker.py ')
     sys.exit(app.exec_())

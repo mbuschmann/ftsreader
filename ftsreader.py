@@ -268,34 +268,41 @@ class ftsreader():
         self.log.append('Getting data block at '+str(pointer)+' with length '+str(length))
         with open(self.path, 'rb') as f:
             f.seek(pointer)
-            dat = np.array(struct.unpack('%1if'%(length), f.read(length*4)))
+            dat = struct.unpack('%1if'%(length), f.read(length*4))
+            #print(dat[0], type(dat[0]), np.array(dat)[0], type(np.array(dat)[0]), length*4,'%1if'%(length))
         #print('get_block\t%1.5f'%(time.time()-t))
-        return dat
+        return np.array(dat)
 
     def get_datablocks(self, block):
         '''Read a datablock named <block> and retrieve x- and y-axis np.arrays from it.'''
         #t = time.time()
-        self.log.append('Getting data blocks')
-        yax = np.array(self.get_block(self.search_block(block)['offset'], self.search_block(block)['length']))
+        #       self.log.append('Getting data blocks')
         #print(block)
-        if block == 'Data Block IgSm' or block == 'Data Block':
-            self.log.append('Getting ifg data block')
-            # crude estimate of opd axis, only for illustratiion purposes, zpd's not included in calculation, and triangular apod. assumption -> 0.9
-            xax = np.linspace(0,2*0.9/float(self.header['Acquisition Parameters']['RES']), len(yax))
-        if block == 'Data Block SpSm':
-            self.log.append('Getting spc data block')
-            # calculate wavenumber axis for spectrum from frequencies of first and last point stored in header
-            xax = np.linspace(self.header['Data Parameters SpSm']['FXV'], self.header['Data Parameters SpSm']['LXV'], len(yax))
-        if block == 'Data Block ScSm':
-            self.log.append('Getting spc data block')
-            xax = np.linspace(self.header['Data Parameters ScSm']['FXV'], self.header['Data Parameters ScSm']['LXV'], len(yax))
-        if block == 'Data Block TrSm':
-            self.log.append('Getting trm data block')
-            xax = np.linspace(self.header['Data Parameters TrSm']['FXV'], self.header['Data Parameters TrSm']['LXV'], len(yax))
-        if block == 'Data Block PhSm':
-            self.log.append('Getting pha data block')
-            xax = np.linspace(self.header['Data Parameters PhSm']['FXV'], self.header['Data Parameters PhSm']['LXV'], len(yax))
+        datablocktype = block.split(' ')[-1]
+        #        if block == 'Data Block IgSm' or block == 'Data Block':
+        #            self.log.append('Getting ifg data block')
+        #            # crude estimate of opd axis, only for illustratiion purposes, zpd's not included in calculation, and triangular apod. assumption -> 0.9
+        #            #xax = np.linspace(0,2*0.9/float(self.header['Acquisition Parameters']['RES']), len(yax))
+        #        if block == 'Data Block SpSm':
+        #            self.log.append('Getting spc data block')
+        #            # calculate wavenumber axis for spectrum from frequencies of first and last point stored in header
+        #            xax = np.linspace(self.header['Data Parameters SpSm']['FXV'], self.header['Data Parameters SpSm']['LXV'], len(yax))
+        #        if block == 'Data Block ScSm':
+        #            self.log.append('Getting spc data block')
+        #            xax = np.linspace(self.header['Data Parameters ScSm']['FXV'], self.header['Data Parameters ScSm']['LXV'], len(yax))
+        #        if block == 'Data Block TrSm':
+        #            self.log.append('Getting trm data block')
+        #            xax = np.linspace(self.header['Data Parameters TrSm']['FXV'], self.header['Data Parameters TrSm']['LXV'], len(yax))
+        #       if block == 'Data Block PhSm':
+        self.log.append('Getting '+datablocktype+' data block')
         #print('get_datablocks\t%1.5f'%(time.time()-t))
+        ## sometimes the number of points defined by the block length is different from the reported NPT that is used from the header.
+        yax = self.get_block(self.search_block(block)['offset'], self.search_block(block)['length'])[:self.header['Data Parameters '+datablocktype]['NPT']]
+        #        xax = np.linspace(self.header[dataparamname]['FXV'], self.header[dataparamname]['LXV'], len(yax))
+        if datablocktype == 'IgSm':
+            xax = None
+        else:
+            xax = np.linspace(self.header['Data Parameters '+datablocktype]['FXV'], self.header['Data Parameters '+datablocktype]['LXV'], self.header['Data Parameters '+datablocktype]['NPT'])
         return xax, yax
 
     def get_slices(self, path):
@@ -507,18 +514,21 @@ if __name__ == '__main__':
     #print(len(s.spc), len(s.ifg))
     #print('total\t%1.5f'%(time.time()-ttt))
     s.print_log()
-    s.print_header()
+    #print(len(s.spcwvn), len(s.spc))
+    #for i in range(20):
+    #    print(s.spcwvn[i-20], s.spc[i-20])
+    #s.print_header()
     #print(s.get_header_par('RES'))
     #print(s.fs)
     #fig, (ax1, ax2) = plt.subplots(2)
-    fig, ax1 = plt.subplots(1)
+    #fig, ax1 = plt.subplots(1)
     #try:
     #    ax1.plot(s.ifg)
     #except: pass
-    try:
-        ax1.plot(s.spcwvn, s.spc)
-    except: pass
+    #try:
+    #    ax1.plot(s.spcwvn, s.spc)
+    #except: pass
     #try:
     #    ax2.plot(s.ifg)
     #except: pass
-    plt.show()
+    #plt.show()

@@ -305,6 +305,57 @@ class ftsreader():
             xax = np.linspace(self.header['Data Parameters '+datablocktype]['FXV'], self.header['Data Parameters '+datablocktype]['LXV'], self.header['Data Parameters '+datablocktype]['NPT'])
         return xax, yax
 
+    def replace_datablock(self, blockname, newfilename, newdatablock):
+        '''Replace the data block <blockname> with data in <newdatablock> and write to <newfilename>.'''
+        #locate spectrum data block
+        self.log.append('Replacing datablock'+blockname+' and writing output to '+newfilename)
+        if os.path.exists(newfilename):
+            print('File already exists: ', newfilename, ' not doing anything ...')
+            self.log.append('File already exists: '+newfilename+' not doing anything ...')
+        else:
+            pointer = self.filestructure[blockname]['offset']
+            olddatablocklen = self.filestructure[blockname]['length']
+            newdatablocklen = len(newdatablock)
+            if olddatablocklen!=newdatablocklen:
+                self.log.append('Old and new datablocks have different size not doing anything ...')
+                print('Old and new datablocks have different size not doing anything ...')
+            else:
+                # format new spectrum data
+                newdatablock_packed = struct.pack('%1if'%(newdatablocklen), *newdatablock)
+                # get content of original file
+                with open(self.path, 'rb') as f:
+                    old_file = f.read()
+                # write original file until spc-data-block, write new block, write rest of orig. file
+                new_file = old_file[:pointer]+newdatablock_packed+old_file[pointer+4*newdatablocklen:]
+                with open(newfilename, 'wb') as f:
+                    f.write(new_file)
+                print('Replaced data block and output written to '+newfilename)
+                self.log.append('Replaced data block and output written to '+newfilename)
+
+    def change_header_par(self, newfilename, par, newval):
+        '''Write a new file to path <newfilename>, which is a copy of self.path, except for one header parameter <par>, which has been replaced by <newval>. Skips if anything would be overwritten.'''
+        parline = self.get_single_param_from_block(par)
+        #print(par, parline)
+        if os.path.exists(newfilename):
+            print('File already exists: ', newfilename, ' not doing anything ...')
+            self.log.append('File already exists: '+newfilename+' not doing anything ...')
+        else:
+            (pn, mtype, leng, offset, val) = parline
+            if mtype == 0:
+                dat = struct.pack('i', newval)
+            elif mtype == 1:
+                dat = struct.pack('d', newval)
+            elif mtype >= 2 and mtype <=4:
+                dat = struct.pack('%1is'%(2*leng), newval)
+            dat = struct.pack('4s2H', *(pn, mtype, leng))+dat
+            with open(self.path, 'rb') as f:
+                oldfile = f.read()
+            newfile = oldfile[:offset]+dat+oldfile[offset+len(dat):]
+            self.log.append('Writing '+newfilename+' with new header ...')
+            with open(newfilename, 'wb') as f:
+                f.write(newfile)
+            print('Replaced header in file: ', newfilename)
+
     def get_slices(self, path):
         '''First attempt to implement concatinated slices from automated measurement routines. Probably only works for Uni Bremen setup currently.'''
         self.slices = {}
@@ -509,26 +560,26 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import sys
     #ttt = time.time()
-    s = ftsreader(sys.argv[1], verbose=True, getspc=True, getifg=True)
-    #s = ftsreader(sys.argv[1], verbose=True)#, getslices=True)
+    s = ftsreader(sys.argv[1], verbose=False, getspc=True, getifg=False)
+    #s = ftsreader(sys.argv[1], verbose=True, getslices=True)
     #print(len(s.spc), len(s.ifg))
     #print('total\t%1.5f'%(time.time()-ttt))
     s.print_log()
     #print(len(s.spcwvn), len(s.spc))
     #for i in range(20):
     #    print(s.spcwvn[i-20], s.spc[i-20])
-    #s.print_header()
-    #print(s.get_header_par('RES'))
+    s.print_header()
+    print(sys.argv[1], s.get_header_par('DAT'), s.get_header_par('TIM'))
     #print(s.fs)
     #fig, (ax1, ax2) = plt.subplots(2)
-    #fig, ax1 = plt.subplots(1)
+    fig, ax1 = plt.subplots(1)
     #try:
-    #    ax1.plot(s.ifg)
+    #ax1.plot(s.ifg)
     #except: pass
     #try:
-    #    ax1.plot(s.spcwvn, s.spc)
+    ax1.plot(s.spcwvn, s.spc)
     #except: pass
     #try:
     #    ax2.plot(s.ifg)
     #except: pass
-    #plt.show()
+    plt.show()

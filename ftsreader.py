@@ -64,7 +64,9 @@ class ftsreader():
                         '96': 'Optic Parameters',
                         '64': 'FT Parameters',
                         '48': 'Acquisition Parameters',
+                        '31': 'Data Parameters',
                         '32': 'Instrument Parameters',
+                        '15': 'Data Block',
                         '7':  'Data Block',
                         '0':  'something'}
         self.__blocknames2 = {'132': ' ScSm', # another declaration to differentiate blocks between ifg, spc, etc.
@@ -268,93 +270,35 @@ class ftsreader():
         self.log.append('Getting data block at '+str(pointer)+' with length '+str(length))
         with open(self.path, 'rb') as f:
             f.seek(pointer)
-            dat = struct.unpack('%1if'%(length), f.read(length*4))
-            #print(dat[0], type(dat[0]), np.array(dat)[0], type(np.array(dat)[0]), length*4,'%1if'%(length))
+            dat = np.array(struct.unpack('%1if'%(length), f.read(length*4)))
         #print('get_block\t%1.5f'%(time.time()-t))
-        return np.array(dat)
+        return dat
 
     def get_datablocks(self, block):
         '''Read a datablock named <block> and retrieve x- and y-axis np.arrays from it.'''
         #t = time.time()
-        #       self.log.append('Getting data blocks')
+        self.log.append('Getting data blocks')
+        yax = np.array(self.get_block(self.search_block(block)['offset'], self.search_block(block)['length']))
         #print(block)
-        datablocktype = block.split(' ')[-1]
-        #        if block == 'Data Block IgSm' or block == 'Data Block':
-        #            self.log.append('Getting ifg data block')
-        #            # crude estimate of opd axis, only for illustratiion purposes, zpd's not included in calculation, and triangular apod. assumption -> 0.9
-        #            #xax = np.linspace(0,2*0.9/float(self.header['Acquisition Parameters']['RES']), len(yax))
-        #        if block == 'Data Block SpSm':
-        #            self.log.append('Getting spc data block')
-        #            # calculate wavenumber axis for spectrum from frequencies of first and last point stored in header
-        #            xax = np.linspace(self.header['Data Parameters SpSm']['FXV'], self.header['Data Parameters SpSm']['LXV'], len(yax))
-        #        if block == 'Data Block ScSm':
-        #            self.log.append('Getting spc data block')
-        #            xax = np.linspace(self.header['Data Parameters ScSm']['FXV'], self.header['Data Parameters ScSm']['LXV'], len(yax))
-        #        if block == 'Data Block TrSm':
-        #            self.log.append('Getting trm data block')
-        #            xax = np.linspace(self.header['Data Parameters TrSm']['FXV'], self.header['Data Parameters TrSm']['LXV'], len(yax))
-        #       if block == 'Data Block PhSm':
-        self.log.append('Getting '+datablocktype+' data block')
+        if block == 'Data Block IgSm' or block == 'Data Block':
+            self.log.append('Getting ifg data block')
+            # crude estimate of opd axis, only for illustratiion purposes, zpd's not included in calculation, and triangular apod. assumption -> 0.9
+            xax = np.linspace(0,2*0.9/float(self.header['Acquisition Parameters']['RES']), len(yax))
+        if block == 'Data Block SpSm':
+            self.log.append('Getting spc data block')
+            # calculate wavenumber axis for spectrum from frequencies of first and last point stored in header
+            xax = np.linspace(self.header['Data Parameters SpSm']['FXV'], self.header['Data Parameters SpSm']['LXV'], len(yax))
+        if block == 'Data Block ScSm':
+            self.log.append('Getting spc data block')
+            xax = np.linspace(self.header['Data Parameters ScSm']['FXV'], self.header['Data Parameters ScSm']['LXV'], len(yax))
+        if block == 'Data Block TrSm':
+            self.log.append('Getting trm data block')
+            xax = np.linspace(self.header['Data Parameters TrSm']['FXV'], self.header['Data Parameters TrSm']['LXV'], len(yax))
+        if block == 'Data Block PhSm':
+            self.log.append('Getting pha data block')
+            xax = np.linspace(self.header['Data Parameters PhSm']['FXV'], self.header['Data Parameters PhSm']['LXV'], len(yax))
         #print('get_datablocks\t%1.5f'%(time.time()-t))
-        ## sometimes the number of points defined by the block length is different from the reported NPT that is used from the header.
-        yax = self.get_block(self.search_block(block)['offset'], self.search_block(block)['length'])[:self.header['Data Parameters '+datablocktype]['NPT']]
-        #        xax = np.linspace(self.header[dataparamname]['FXV'], self.header[dataparamname]['LXV'], len(yax))
-        if datablocktype == 'IgSm':
-            xax = None
-        else:
-            xax = np.linspace(self.header['Data Parameters '+datablocktype]['FXV'], self.header['Data Parameters '+datablocktype]['LXV'], self.header['Data Parameters '+datablocktype]['NPT'])
         return xax, yax
-
-    def replace_datablock(self, blockname, newfilename, newdatablock):
-        '''Replace the data block <blockname> with data in <newdatablock> and write to <newfilename>.'''
-        #locate spectrum data block
-        self.log.append('Replacing datablock'+blockname+' and writing output to '+newfilename)
-        if os.path.exists(newfilename):
-            print('File already exists: ', newfilename, ' not doing anything ...')
-            self.log.append('File already exists: '+newfilename+' not doing anything ...')
-        else:
-            pointer = self.filestructure[blockname]['offset']
-            olddatablocklen = self.filestructure[blockname]['length']
-            newdatablocklen = len(newdatablock)
-            if olddatablocklen!=newdatablocklen:
-                self.log.append('Old and new datablocks have different size not doing anything ...')
-                print('Old and new datablocks have different size not doing anything ...')
-            else:
-                # format new spectrum data
-                newdatablock_packed = struct.pack('%1if'%(newdatablocklen), *newdatablock)
-                # get content of original file
-                with open(self.path, 'rb') as f:
-                    old_file = f.read()
-                # write original file until spc-data-block, write new block, write rest of orig. file
-                new_file = old_file[:pointer]+newdatablock_packed+old_file[pointer+4*newdatablocklen:]
-                with open(newfilename, 'wb') as f:
-                    f.write(new_file)
-                print('Replaced data block and output written to '+newfilename)
-                self.log.append('Replaced data block and output written to '+newfilename)
-
-    def change_header_par(self, newfilename, par, newval):
-        '''Write a new file to path <newfilename>, which is a copy of self.path, except for one header parameter <par>, which has been replaced by <newval>. Skips if anything would be overwritten.'''
-        parline = self.get_single_param_from_block(par)
-        #print(par, parline)
-        if os.path.exists(newfilename):
-            print('File already exists: ', newfilename, ' not doing anything ...')
-            self.log.append('File already exists: '+newfilename+' not doing anything ...')
-        else:
-            (pn, mtype, leng, offset, val) = parline
-            if mtype == 0:
-                dat = struct.pack('i', newval)
-            elif mtype == 1:
-                dat = struct.pack('d', newval)
-            elif mtype >= 2 and mtype <=4:
-                dat = struct.pack('%1is'%(2*leng), newval)
-            dat = struct.pack('4s2H', *(pn, mtype, leng))+dat
-            with open(self.path, 'rb') as f:
-                oldfile = f.read()
-            newfile = oldfile[:offset]+dat+oldfile[offset+len(dat):]
-            self.log.append('Writing '+newfilename+' with new header ...')
-            with open(newfilename, 'wb') as f:
-                f.write(newfile)
-            print('Replaced header in file: ', newfilename)
 
     def get_slices(self, path):
         '''First attempt to implement concatinated slices from automated measurement routines. Probably only works for Uni Bremen setup currently.'''
@@ -560,25 +504,23 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import sys
     #ttt = time.time()
-    s = ftsreader(sys.argv[1], verbose=False, getspc=True, getifg=False)
-    #s = ftsreader(sys.argv[1], verbose=True, getslices=True)
+    #s = ftsreader(sys.argv[1], verbose=True, getspc=True, getifg=True)
+    s = ftsreader('../Downloads/br20231129N2O148_focal.0', verbose=True, gettrm=True)
+    #s = ftsreader(sys.argv[1], verbose=True)#, getslices=True)
     #print(len(s.spc), len(s.ifg))
     #print('total\t%1.5f'%(time.time()-ttt))
     s.print_log()
-    #print(len(s.spcwvn), len(s.spc))
-    #for i in range(20):
-    #    print(s.spcwvn[i-20], s.spc[i-20])
     s.print_header()
-    print(sys.argv[1], s.get_header_par('DAT'), s.get_header_par('TIM'))
+    #print(s.get_header_par('RES'))
     #print(s.fs)
     #fig, (ax1, ax2) = plt.subplots(2)
     fig, ax1 = plt.subplots(1)
     #try:
-    #ax1.plot(s.ifg)
+    #    ax1.plot(s.ifg)
     #except: pass
-    #try:
-    ax1.plot(s.spcwvn, s.spc)
-    #except: pass
+    try:
+        ax1.plot(s.trmwvn, s.trm)
+    except: pass
     #try:
     #    ax2.plot(s.ifg)
     #except: pass

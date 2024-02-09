@@ -43,7 +43,7 @@ class ftsreader():
             return pars[0]
         elif len(pars)>1:
             if self.verbose: print('Found parameter in multiple datablocks')
-            return pars
+            return pars[0]
         else:
             if self.verbose: print('Parameter', par, 'not found in header!')
             return None
@@ -196,6 +196,72 @@ class ftsreader():
             else: pass
         #print('read_header\t%1.5f'%(time.time()-t))
         return 0
+
+    def get_single_param_from_block(self, par):
+        '''Retrieve a single parameter from self.header, including binary length and offset. This is needed to repack and replace a header parameter later.'''
+        block = self.search_block(self.search_header_par(par))
+        ll = self.getparamsfromblock(block['offset'], block['length'], full=True)
+        #print(ll)
+        for l in ll:
+            if l[0][:len(par)].decode('utf8')==par:
+                return l
+            else: pass
+
+    def change_header_pars(self, pars, newvals):
+        '''Change a list of header parameters with their associated values and write in a buffered copy of the raw data.'''
+        # get content of original file
+        if self.newfilebuffer == None:
+            with open(self.path, 'rb') as f:
+                self.newfilebuffer = f.read()
+        else: 
+            pass
+        for i, par in enumerate(pars):
+            try:
+                parline = self.get_single_param_from_block(par)
+                #print(par, parline)
+                (pn, mtype, leng, offset, val) = parline
+                if mtype == 0:
+                    dat = struct.pack('i', newvals[i])
+                elif mtype == 1:
+                    dat = struct.pack('d', newvals[i])
+                elif mtype >= 2 and mtype <=4:
+                    dat = struct.pack('%1is'%(2*leng), newvals[i].encode())
+                dat = struct.pack('4s2H', *(pn, mtype, leng))+dat
+                self.newfilebuffer = self.newfilebuffer[:offset]+dat+self.newfilebuffer[offset+len(dat):]
+                self.log.append('Replaced header parameter '+par+' in newfilebuffer.')
+            except Exception as e:
+                self.log.append('Error while replacing header parameter '+par+' in newfilebuffer: '+str(e))
+        
+    def replace_datablock(self, blockname, newdatablock):
+        '''Replace the data block <blockname> with data in <newdatablock>.'''
+        #locate spectrum data block
+        self.log.append('Replacing datablock'+blockname+' in newfilebuffer')
+        pointer = self.fs[blockname]['offset']
+        olddatablocklen = self.fs[blockname]['length']
+        newdatablocklen = len(newdatablock)
+        if olddatablocklen!=newdatablocklen:
+            self.log.append('Old and new datablocks have different size not doing anything ...')
+            print('Old and new datablocks have different sizes:', olddatablocklen, newdatablocklen, '     not doing anything ...')
+        else:
+            # format new spectrum data
+            newdatablock_packed = struct.pack(str(newdatablocklen)+'f', *newdatablock)
+            # get content of original file
+            if self.newfilebuffer == None:
+                with open(self.path, 'rb') as f:
+                    self.newfilebuffer = f.read()
+            # write original file until spc-data-block, write new block, write rest of orig. file
+            self.newfilebuffer = self.newfilebuffer[:pointer]+newdatablock_packed+self.newfilebuffer[pointer+4*newdatablocklen:]
+            self.log.append('Replaced data block in newfilebuffer')
+
+    def save_changed_file(self, outputfilename):
+        self.log.append('Writing '+outputfilename)
+        if os.path.exists(outputfilename):
+            print('File already exists: ', outputfilename, ' not doing anything ...')
+            self.log.append('File already exists: '+outputfilename+' not doing anything ...')
+        else:
+            with open(outputfilename, 'wb') as f:
+                f.write(self.newfilebuffer)
+            print('wrote', outputfilename)
 
     def fwdifg(self):
         if self.header['Instrument Parameters']['GFW']==1:
@@ -436,6 +502,7 @@ class ftsreader():
         self.path = path
         self.filemode = filemode
         self.streamdata = streamdata
+        self.newfilebuffer = None
         if self.verbose:
             print('Initializing ...')
         self.log.append('Initializing')
@@ -505,23 +572,23 @@ if __name__ == '__main__':
     import sys
     #ttt = time.time()
     #s = ftsreader(sys.argv[1], verbose=True, getspc=True, getifg=True)
-    s = ftsreader('../Downloads/br20231129N2O148_focal.0', verbose=True, gettrm=True)
+    #s = ftsreader('../Downloads/br20231129N2O148_focal.0', verbose=True, gettrm=True)
     #s = ftsreader(sys.argv[1], verbose=True)#, getslices=True)
     #print(len(s.spc), len(s.ifg))
     #print('total\t%1.5f'%(time.time()-ttt))
-    s.print_log()
-    s.print_header()
+    #s.print_log()
+    #s.print_header()
     #print(s.get_header_par('RES'))
     #print(s.fs)
     #fig, (ax1, ax2) = plt.subplots(2)
-    fig, ax1 = plt.subplots(1)
+    #fig, ax1 = plt.subplots(1)
     #try:
     #    ax1.plot(s.ifg)
     #except: pass
-    try:
-        ax1.plot(s.trmwvn, s.trm)
-    except: pass
+    #try:
+    #    ax1.plot(s.trmwvn, s.trm)
+    #except: pass
     #try:
     #    ax2.plot(s.ifg)
     #except: pass
-    plt.show()
+    #plt.show()

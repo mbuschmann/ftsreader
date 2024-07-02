@@ -74,6 +74,7 @@ class ftsreader():
         self.__blocknames2 = {'132': ' ScSm', # another declaration to differentiate blocks between ifg, spc, etc.
                         '4': ' SpSm',
                         '8': ' IgSm',
+                        '136': ' IgSm/2.Chn.',
                         '20': ' TrSm',
                         '12': ' PhSm',
                         b'\x84': ' SpSm/2.Chn.', # some weird stuff going on with python3 decoding here, use binary representation
@@ -855,9 +856,9 @@ class ftsreader():
                     self.log.append('No Interferogram requested or not found ... skipping.')
                     self.has_ifg = False
                 # get two ifgs if requested
-                if getdoubleifg and (self.has_block('Data Block IgSm') and self.has_block('Data Block')):
+                if getdoubleifg and (self.has_block('Data Block IgSm/2.Chn.') and self.has_block('Data Block IgSm/2.Chn.')):
                     self.ifgopd, self.ifg = self.get_datablocks('Data Block IgSm')
-                    self.ifgopd2, self.ifg2 = self.get_datablocks('Data Block')
+                    self.ifgopd2, self.ifg2 = self.get_datablocks('Data Block IgSm/2.Chn.')
                     self.has_difg = True
                 else:
                     self.log.append('No double interferogram requested or not found ... skipping.')
@@ -888,13 +889,13 @@ if __name__ == '__main__':
         s.print_log()
         s.print_header()
         if s.has_ifg and s.has_spc:
-            fig = s.ifg_spc_figure(s)
+            fig = s.ifg_spc_figure()
             plt.show()
         elif s.has_ifg:
-            fig = s.ifg_figure(s)
+            fig = s.ifg_figure()
             plt.show()
         elif s.has_spc:
-            fig = s.spc_figure(s)
+            fig = s.spc_figure()
             plt.show()
         else:
             pass

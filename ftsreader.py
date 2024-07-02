@@ -723,13 +723,17 @@ class ftsreader():
     def apply_frequency_limits(self):
         if self.FT_params['lfq']==None or self.FT_params['hfq']==None:
             try:
+                wvn_diff = self.spcwvn[1] - self.spcwvn[0]
+                wvn_min = self.spcwvn[0] - wvn_diff/2
+                wvn_max = self.spcwvn[-1] + wvn_diff/2
                 #hfq = self.header['FT Parameters']['HFQ']
                 #lfq = self.header['FT Parameters']['LFQ']
                 #selection = (self.spcwvn2>lfq) & (self.spcwvn2<hfq)
-                selection = (self.spcwvn2>=np.min(self.spcwvn)) & (self.spcwvn2<=np.max(self.spcwvn))
+                #selection = (self.spcwvn2>=np.min(self.spcwvn)) & (self.spcwvn2<=np.max(self.spcwvn))
+                selection = (self.spcwvn2>wvn_min) & (self.spcwvn2<wvn_max)
                 print('Frequency limits not found in FT_params. Using limits of original wavenumber axis.')
-                self.spc2 = self.spc2[selection]
-                self.spcwvn2 = self.spcwvn2[selection]
+                self.spc2 = self.spc2[np.where(selection)]
+                self.spcwvn2 = self.spcwvn2[np.where(selection)]
             except Exception:
                 print('Tried to apply frequency limits, but not specified in FT_params and no original wvn axis present.')
         else:

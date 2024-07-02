@@ -495,7 +495,9 @@ class ftsreader():
             phase_ifg_length=None, 
             phase_threshold=(0.0, 0.0), 
             use_stored_phase=False,
-            max_opd=None):
+            max_opd=None,
+            lfq=None,
+            hfq=None):
         
         self.FT_params = {}
         if laser_wvn==None:
@@ -510,6 +512,8 @@ class ftsreader():
         self.FT_params['phase_threshold'] = phase_threshold
         self.FT_params['use_stored_phase'] = use_stored_phase
         self.FT_params['max_opd'] = max_opd
+        self.FT_params['lfq'] = lfq
+        self.FT_params['hfq'] = hfq
     
     def init_FT(self, stored_phase=(None, None)):
         if self.header['Acquisition Parameters']['AQM']=='SD':
@@ -530,7 +534,7 @@ class ftsreader():
             return int(2 ** np.ceil(np.log2(x)))
 
         self._ifg_array_length = next_higher_power_of_two(len(self._ifg_fw)) * self.FT_params['zero_filling']
-        self.wvn2 = np.fft.fftfreq(self._ifg_array_length, 0.5/self.FT_params['laser_wvn'])[:int(self._ifg_array_length/2)]
+        self.spcwvn2 = np.fft.fftfreq(self._ifg_array_length, 0.5/self.FT_params['laser_wvn'])[:int(self._ifg_array_length/2)]
 
         if self.FT_params['use_stored_phase']:
             self._phase_fw = stored_phase[0]
@@ -627,13 +631,10 @@ class ftsreader():
     def determine_phase(self):
         if self.FT_params['use_stored_phase']:
             print('Stored phase will be replaced!')
-
-        phase_fw, self.phase_spc_fw = self._lowres_phase(self._ifg_fw, self.FT_params['phase_ifg_length'], self._zpd_fw)
-        phase_bw, self.phase_spc_bw = self._lowres_phase(self._ifg_bw, self.FT_params['phase_ifg_length'], self._zpd_bw)
-
-        self.phase_fw = self._interpolate_phase(self.FT_params['phase_threshold'][0], self._phase_spc_fw, phase_fw)
-        self.phase_bw = self._interpolate_phase(self.FT_params['phase_threshold'][0], self._phase_spc_bw, phase_bw)
-
+        phase_fw, self._phase_spc_fw = self._lowres_phase(self._ifg_fw, self.FT_params['phase_ifg_length'], self._zpd_fw)
+        phase_bw, self._phase_spc_bw = self._lowres_phase(self._ifg_bw, self.FT_params['phase_ifg_length'], self._zpd_bw)
+        self._phase_fw = self._interpolate_phase(self.FT_params['phase_threshold'][0], self._phase_spc_fw, phase_fw)
+        self._phase_bw = self._interpolate_phase(self.FT_params['phase_threshold'][0], self._phase_spc_bw, phase_bw)
         self.phase = np.mean([self._phase_fw, self._phase_bw], axis=0)
         self.phase_spc = np.mean([self._phase_spc_fw, self._phase_spc_bw], axis=0)
     
@@ -671,7 +672,7 @@ class ftsreader():
 
         phase_ifg = phase_ifg_truncated * generate_cosine_square_bell(len(phase_ifg_truncated), zpd, phase_ifg_length)
         return phase_ifg
-    
+
     def _ftir_fft(self, ifg, zpd):
         ifg_packed = self._pack_ifg(ifg, zpd)
         spc = np.fft.ifft(ifg_packed)[:int(len(ifg_packed)/2)]
@@ -685,21 +686,19 @@ class ftsreader():
 
     def _phase_of_spc(self, spc):
         return np.angle(spc) + np.pi   
-    
+
     def ifg_to_spc(self):
         self._spc_uncorr_fw = self._ftir_fft(self._ramp_ifg(self._ifg_fw, self._zpd_fw), self._zpd_fw)
         self._spc_uncorr_bw = self._ftir_fft(self._ramp_ifg(self._ifg_bw, self._zpd_bw), self._zpd_bw)
         self._phase_highres_fw = self._phase_of_spc(self._spc_uncorr_fw)
         self._phase_highres_bw = self._phase_of_spc(self._spc_uncorr_bw)
-
         if self.FT_params['phase_correction_mode'] == 'Mertz':
-            self.spc2_fw, self._spc2_imag_fw, self.spc2_complex_fw = self._mertz_correction(self._spc_uncorr_fw, self._phase_highres_fw, self._phase_fw)
-            self.spc2_bw, self._spc2_imag_bw, self.spc2_complex_bw = self._mertz_correction(self._spc_uncorr_bw, self._phase_highres_bw, self._phase_bw)
-
+            self._spc2_fw, self._spc2_imag_fw, self._spc2_complex_fw = self._mertz_correction(self._spc_uncorr_fw, self._phase_highres_fw, self._phase_fw)
+            self._spc2_bw, self._spc2_imag_bw, self._spc2_complex_bw = self._mertz_correction(self._spc_uncorr_bw, self._phase_highres_bw, self._phase_bw)
             self.spc2 = np.mean([self._spc2_fw, self._spc2_bw], axis=0)
             self.spc2_complex = np.mean([self._spc2_complex_fw, self._spc2_complex_bw], axis=0)
-    
-            
+            print('Created: self.spc2, self.spc2_complex, etc.')
+
     def _ramp_ifg(self, ifg, zpd):
         def generate_ramp(ifg_length, zpd_ramp):
             ramp_length = 2 * zpd_ramp
@@ -721,14 +720,63 @@ class ftsreader():
         spc_complex = spc_uncorr * np.exp(-1j * phase)
         return spc, spc_imag, spc_complex
     
-    def spc_figure(self):
+    def apply_frequency_limits(self):
+        if self.FT_params['lfq']==None or self.FT_params['hfq']==None:
+            try:
+                #hfq = self.header['FT Parameters']['HFQ']
+                #lfq = self.header['FT Parameters']['LFQ']
+                #selection = (self.spcwvn2>lfq) & (self.spcwvn2<hfq)
+                selection = (self.spcwvn2>=np.min(self.spcwvn)) & (self.spcwvn2<=np.max(self.spcwvn))
+                print('Frequency limits not found in FT_params. Using limits of original wavenumber axis.')
+                self.spc2 = self.spc2[selection]
+                self.spcwvn2 = self.spcwvn2[selection]
+            except Exception:
+                print('Tried to apply frequency limits, but not specified in FT_params and no original wvn axis present.')
+        else:
+            print('Using frequency limits from FT_params')
+            selection = (self.spcwvn2>self.FT_params['lfq']) & (self.spcwvn2<self.FT_params['hfq'])
+            self.spc2 = self.spc2[selection]
+            self.spcwvn2 = self.spcwvn2[selection]
+    
+    def calculate_spectrum(self):
+        ''' Wrapper function to calculate spectrum with Mertz phase correction and standard parameters.\n
+        If more control is needed adjust parameters and follow these steps:
+            fts_obj = ftsreader('path/to/ifg', getifg=True)
+            fts_obj.set_FT_params(laser_wvn=None,
+                                  zpd=(None, None),
+                                  zpd_search_mode='absolute maximum',
+                                  zero_filling=2,
+                                  phase_correction_mode='Mertz',
+                                  phase_ifg_length=None,
+                                  phase_threshold=(0.0, 0.0),
+                                  use_stored_phase=False,
+                                  max_opd=None,
+                                  lfq=None,
+                                  hfq=None
+                                  )
+            fts_obj.init_FT(stored_phase=(None, None))
+            fts_obj.determine_phase()
+            fts_obj.ifg_to_spc()'''
+        self.set_FT_params()
+        self.init_FT()
+        self.determine_phase()
+        self.ifg_to_spc()
+        self.apply_frequency_limits()
+    
+    def spc_figure(self, plot_calculated_spc=False):
+        """Returning a figure with one panel: SPC
+        if plot_calculated=True then self.spc2 will be plotted."""
         fig, ax1 = plt.subplots(1)
         ax1.set_xlabel('Wavenumber [cm$^{-1}$]')
         ax1.set_title('Spectrum: '+self.filename)
-        ax1.plot(self.spcwvn, self.spc, 'k-')
+        if plot_calculated_spc:
+            ax1.plot(self.spcwvn2, self.spc2, 'k-')
+        else:
+            ax1.plot(self.spcwvn, self.spc, 'k-')
         return fig
 
     def ifg_figure(self):
+        """Returning a figure with one panel: IFG"""
         fig, ax1 = plt.subplots(1)
         ax1.set_title('Interferogram: '+self.filename)
         ax1.set_xlabel('Interferogram points')
@@ -736,6 +784,7 @@ class ftsreader():
         return fig
 
     def ifg_spc_figure(self):
+        """Returning a figure with two panels: IFG and SPC"""
         fig, (ax1, ax2) = plt.subplots(2)
         ax1.set_title(self.filename)
         ax1.set_xlabel('Interferogram points')

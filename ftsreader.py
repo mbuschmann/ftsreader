@@ -6,8 +6,10 @@ A class providing an interface for accessing header, interferogram and spectrum 
 '''
 
 from __future__ import print_function, division
-import os, struct, io, time
+import os, sys, struct, io, time
 import numpy as np
+import matplotlib.pyplot as plt
+
 
 class ftsreader():
     '''Python class to interact with FTS files.\n\n
@@ -719,6 +721,30 @@ class ftsreader():
         spc_complex = spc_uncorr * np.exp(-1j * phase)
         return spc, spc_imag, spc_complex
     
+    def spc_figure(self):
+        fig, ax1 = plt.subplots(1)
+        ax1.set_xlabel('Wavenumber [cm$^{-1}$]')
+        ax1.set_title('Spectrum: '+self.filename)
+        ax1.plot(self.spcwvn, self.spc, 'k-')
+        return fig
+
+    def ifg_figure(self):
+        fig, ax1 = plt.subplots(1)
+        ax1.set_title('Interferogram: '+self.filename)
+        ax1.set_xlabel('Interferogram points')
+        ax1.plot(self.ifg, 'k-')
+        return fig
+
+    def ifg_spc_figure(self):
+        fig, (ax1, ax2) = plt.subplots(2)
+        ax1.set_title(self.filename)
+        ax1.set_xlabel('Interferogram points')
+        ax2.set_xlabel('Wavenumber [cm$^{-1}$]')
+        ax1.set_ylabel('Interferogram')
+        ax2.set_ylabel('Spectrum')
+        ax1.plot(self.ifg, 'k-')
+        ax2.plot(self.spcwvn, self.spc, 'k-')
+        return fig
     
     def __init__(self, path, verbose=False, getspc=False, getifg=False, getdoubleifg=False, gettrm=False, getpha=False, getslices=False, filemode='hdd', streamdata=None):
         t1 = time.time()
@@ -802,47 +828,20 @@ class ftsreader():
             print('Error while processing '+path+' ... check self.log or do self.print_log()')
         #print('init\t%1.5f'%(time.time()-t1))
 
-def spc_figure(s):
-    fig, (ax1, ax2) = plt.subplots(2)
-    ax1.set_xlabel('Wavenumber [cm$^{-1}$]')
-    ax1.set_title('Spectrum: '+s.filename)
-    ax1.plot(s.spcwvn, s.spc, 'k-')
-    return fig
-
-def ifg_figure(s):
-    fig, ax1 = plt.subplots(1)
-    ax1.set_title('Interferogram: '+s.filename)
-    ax1.set_xlabel('Interferogram points')
-    ax1.plot(s.ifg, 'k-')
-    return fig
-
-def ifg_spc_figure(s):
-    fig, (ax1, ax2) = plt.subplots(2)
-    ax1.set_title(s.filename)
-    ax1.set_xlabel('Interferogram points')
-    ax2.set_xlabel('Wavenumber [cm$^{-1}$]')
-    ax1.set_ylabel('Interferogram')
-    ax2.set_ylabel('Spectrum')
-    ax1.plot(s.ifg, 'k-')
-    ax2.plot(s.spcwvn, s.spc, 'k-')
-    return fig
-
 
 if __name__ == '__main__':
-    import matplotlib.pyplot as plt
-    import sys
     try:
         s = ftsreader(sys.argv[1], verbose=True, getspc=True, getifg=True)
         s.print_log()
         s.print_header()
         if s.has_ifg and s.has_spc:
-            fig = ifg_spc_figure(s)
+            fig = s.ifg_spc_figure(s)
             plt.show()
         elif s.has_ifg:
-            fig = ifg_figure(s)
+            fig = s.ifg_figure(s)
             plt.show()
         elif s.has_spc:
-            fig = spc_figure(s)
+            fig = s.spc_figure(s)
             plt.show()
         else:
             pass

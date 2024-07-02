@@ -343,27 +343,33 @@ class ftsreader():
     def get_datablocks(self, block):
         '''Read a datablock named <block> and retrieve x- and y-axis np.arrays from it.'''
         #t = time.time()
-        self.log.append('Getting data blocks')
-        yax = np.array(self.get_block(self.search_block(block)['offset'], self.search_block(block)['length']))
+        #       self.log.append('Getting data blocks')
         #print(block)
-        if block == 'Data Block IgSm' or block == 'Data Block':
-            self.log.append('Getting ifg data block')
-            # crude estimate of opd axis, only for illustratiion purposes, zpd's not included in calculation, and triangular apod. assumption -> 0.9
-            xax = np.linspace(0,2*0.9/float(self.header['Acquisition Parameters']['RES']), len(yax))
-        if block == 'Data Block SpSm':
-            self.log.append('Getting spc data block')
-            # calculate wavenumber axis for spectrum from frequencies of first and last point stored in header
-            xax = np.linspace(self.header['Data Parameters SpSm']['FXV'], self.header['Data Parameters SpSm']['LXV'], len(yax))
-        if block == 'Data Block ScSm':
-            self.log.append('Getting spc data block')
-            xax = np.linspace(self.header['Data Parameters ScSm']['FXV'], self.header['Data Parameters ScSm']['LXV'], len(yax))
-        if block == 'Data Block TrSm':
-            self.log.append('Getting trm data block')
-            xax = np.linspace(self.header['Data Parameters TrSm']['FXV'], self.header['Data Parameters TrSm']['LXV'], len(yax))
-        if block == 'Data Block PhSm':
-            self.log.append('Getting pha data block')
-            xax = np.linspace(self.header['Data Parameters PhSm']['FXV'], self.header['Data Parameters PhSm']['LXV'], len(yax))
+        datablocktype = block.split(' ')[-1]
+        #        if block == 'Data Block IgSm' or block == 'Data Block':
+        #            self.log.append('Getting ifg data block')
+        #            # crude estimate of opd axis, only for illustratiion purposes, zpd's not included in calculation, and triangular apod. assumption -> 0.9
+        #            #xax = np.linspace(0,2*0.9/float(self.header['Acquisition Parameters']['RES']), len(yax))
+        #        if block == 'Data Block SpSm':
+        #            self.log.append('Getting spc data block')
+        #            # calculate wavenumber axis for spectrum from frequencies of first and last point stored in header
+        #            xax = np.linspace(self.header['Data Parameters SpSm']['FXV'], self.header['Data Parameters SpSm']['LXV'], len(yax))
+        #        if block == 'Data Block ScSm':
+        #            self.log.append('Getting spc data block')
+        #            xax = np.linspace(self.header['Data Parameters ScSm']['FXV'], self.header['Data Parameters ScSm']['LXV'], len(yax))
+        #        if block == 'Data Block TrSm':
+        #            self.log.append('Getting trm data block')
+        #            xax = np.linspace(self.header['Data Parameters TrSm']['FXV'], self.header['Data Parameters TrSm']['LXV'], len(yax))
+        #       if block == 'Data Block PhSm':
+        self.log.append('Getting '+datablocktype+' data block')
         #print('get_datablocks\t%1.5f'%(time.time()-t))
+        ## sometimes the number of points defined by the block length is different from the reported NPT that is used from the header.
+        yax = self.get_block(self.search_block(block)['offset'], self.search_block(block)['length'])[:self.header['Data Parameters '+datablocktype]['NPT']]
+        #        xax = np.linspace(self.header[dataparamname]['FXV'], self.header[dataparamname]['LXV'], len(yax))
+        if datablocktype == 'IgSm':
+            xax = None
+        else:
+            xax = np.linspace(self.header['Data Parameters '+datablocktype]['FXV'], self.header['Data Parameters '+datablocktype]['LXV'], self.header['Data Parameters '+datablocktype]['NPT'])
         return xax, yax
 
     def get_slices(self, path):
@@ -493,7 +499,244 @@ class ftsreader():
             return True
         else:
             return False
+    
+    
+    def set_FT_params(
+            self,
+            laser_wvn=None,
+            zpd=(None, None), 
+            zpd_search_mode='absolute maximum', 
+            zero_filling=2, 
+            phase_correction_mode='Mertz', 
+            phase_ifg_length=None, 
+            phase_threshold=(0.0, 0.0), 
+            use_stored_phase=False,
+            max_opd=None):
+        
+        self.FT_params = {}
+        if laser_wvn==None:
+            self.FT_params['laser_wvn'] = self.header['Instrument Parameters']['LWN']
+        else:
+            self.FT_params['laser_wvn'] = laser_wvn
+        self.FT_params['zpd'] = zpd
+        self.FT_params['zpd_search_mode'] = zpd_search_mode
+        self.FT_params['zero_filling'] = zero_filling
+        self.FT_params['phase_correction_mode'] = phase_correction_mode
+        self.FT_params['phase_ifg_length'] = phase_ifg_length
+        self.FT_params['phase_threshold'] = phase_threshold
+        self.FT_params['use_stored_phase'] = use_stored_phase
+        self.FT_params['max_opd'] = max_opd
+    
+    def init_FT(self, stored_phase=(None, None)):
+        if self.header['Acquisition Parameters']['AQM']=='SD':
+            self._ifg_fw = self._normalize_ifg(self.ifg[:int(len(self.ifg)/2)])
+            self._ifg_bw = self._normalize_ifg(self.ifg[int(len(self.ifg)/2):][::-1])
+        
+        self._zpd_fw = self._get_zpd(self._ifg_fw, self.FT_params['zpd'][0], self.FT_params['zpd_search_mode'])
+        self._zpd_bw = self._get_zpd(self._ifg_bw, self.FT_params['zpd'][1], self.FT_params['zpd_search_mode'])
+        
+        if self.FT_params['max_opd']:
+            self._ifg_fw = self._ifg_fw[:int(np.ceil(self._zpd_fw) + 2*self.FT_params['laser_wvn']*self.FT_params['max_opd'])]
+            self._ifg_bw = self._ifg_bw[:int(np.ceil(self._zpd_bw) + 2*self.FT_params['laser_wvn']*self.FT_params['max_opd'])]
 
+        if self.FT_params['phase_ifg_length'] is None:
+            self.FT_params['phase_ifg_length'] = int(np.min([self._zpd_fw, self._zpd_bw], axis=0) - 1)
+
+        def next_higher_power_of_two(x):
+            return int(2 ** np.ceil(np.log2(x)))
+
+        self._ifg_array_length = next_higher_power_of_two(len(self._ifg_fw)) * self.FT_params['zero_filling']
+        self.wvn2 = np.fft.fftfreq(self._ifg_array_length, 0.5/self.FT_params['laser_wvn'])[:int(self._ifg_array_length/2)]
+
+        if self.FT_params['use_stored_phase']:
+            self._phase_fw = stored_phase[0]
+            self._phase_bw = stored_phase[1]
+            self.phase = np.mean([self._phase_fw, self._phase_bw], axis=0)
+            
+    def _normalize_ifg(self, ifg):
+        ifg -= np.mean(ifg[int(len(ifg)/2):])
+        return ifg
+    
+    def _get_zpd(self, ifg, zpd, zpd_search_mode):
+        if zpd_search_mode == 'use given zpd':
+            return zpd  
+        elif zpd_search_mode == 'absolute maximum':
+            return np.argmax(np.abs(ifg)) 
+        elif zpd_search_mode == 'parabola fit':
+            zpd_absmax = np.argmax(np.abs(ifg))
+            return self._calc_parabola_vertex(
+                zpd_absmax - 1, ifg[zpd_absmax - 1],
+                zpd_absmax, ifg[zpd_absmax],
+                zpd_absmax + 1, ifg[zpd_absmax + 1],
+            )
+        elif zpd_search_mode == 'ifg symmetry':
+            return self._calc_symmetry_zpd(ifg)
+        else:
+            print('No ZPD can be determined, please choose ZPD calculation method or give ZPD value directly!')
+
+    def _calc_parabola_vertex(self, x1, y1, x2, y2, x3, y3):
+        denom = (x1 - x2) * (x1 - x3) * (x2 - x3)
+        A = (x3 * (y2 - y1) + x2 * (y1 - y3) + x1 * (y3 - y2)) / denom
+        B = (x3 * x3 * (y1 - y2) + x2 * x2 * (y3 - y1) + x1 * x1 * (y2 - y3)) / denom
+        C = (
+            x2 * x3 * (x2 - x3) * y1
+            + x3 * x1 * (x3 - x1) * y2
+            + x1 * x2 * (x1 - x2) * y3
+        ) / denom
+        parabola_vertex = -B / (2 * A)
+        return parabola_vertex
+    
+    
+    def _calc_symmetry_zpd(self, ifg):
+        kmax, kmin, ybar, ymax, ymin = np.argmax(ifg), np.argmin(ifg), np.mean(ifg), np.max(ifg), np.min(ifg)
+        if np.abs(ymax-ybar) > np.abs(ymin-ybar):
+            pinl=kmax
+        else:
+            pinl=kmin
+            
+        def symmetry(ac_igram, lpco):
+            sasumi=0.0
+            sadeli=0.0
+            sasump=0.0
+            sadelp=0.0
+            q = np.pi/float(lpco)
+            for x in np.arange(int(lpco/2)):
+                ww = (5.0*np.cos(q*x)+np.cos(3.0*q*x))/6.0
+                sasumi = sasumi + ww*np.abs(ac_igram[-x]+ac_igram[x])
+                sadeli = sadeli + ww*np.abs(ac_igram[-x]-ac_igram[x])
+                sasump = sasump + ww*np.abs(ac_igram[-x+1]+ac_igram[x])
+                sadelp = sadelp + ww*np.abs(ac_igram[-x+1]-ac_igram[x])
+            symmi=(sasumi-sadeli)/(sasumi+sadeli)
+            symmp=(sasump-sadelp)/(sasump+sadelp)
+            return symmi, symmp
+        
+        def bestzpd(ac_igram, nburst, lpco):
+            eps=1e-37
+            smax=-999.0
+            best=0.0
+            symiw=0.0
+            sympw=0.0
+            for i in range(2*nburst):
+                ac_igrami = ac_igram[i:-2*nburst+i]
+                symmi, symmp = symmetry(ac_igrami, lpco)
+                if sympw>smax:
+                    smax=sympw
+                    denom=eps+4.0*np.abs(2.0*sympw-symiw-symmi)
+                    best=float(i)-0.5+(-symiw+symmi)/denom
+                if symmi>smax:
+                    smax=symmi
+                    denom=eps+4.0*np.abs(2.0*symmi-sympw-symmp)
+                    best=float(i)+(-sympw+symmp)/denom
+                symiw=symmi
+                sympw=symmp
+            return best-nburst
+
+        lpco = 1024
+        nburst = 15
+        ac_igram = ifg[int(pinl-nburst-lpco/2):int(pinl+nburst+lpco/2)] 
+        best = bestzpd(ac_igram, nburst, lpco)
+        zpdl = pinl+best
+        izpd = int(np.round(zpdl,0))
+        return zpdl
+
+    def determine_phase(self):
+        if self.FT_params['use_stored_phase']:
+            print('Stored phase will be replaced!')
+
+        phase_fw, self.phase_spc_fw = self._lowres_phase(self._ifg_fw, self.FT_params['phase_ifg_length'], self._zpd_fw)
+        phase_bw, self.phase_spc_bw = self._lowres_phase(self._ifg_bw, self.FT_params['phase_ifg_length'], self._zpd_bw)
+
+        self.phase_fw = self._interpolate_phase(self.FT_params['phase_threshold'][0], self._phase_spc_fw, phase_fw)
+        self.phase_bw = self._interpolate_phase(self.FT_params['phase_threshold'][0], self._phase_spc_bw, phase_bw)
+
+        self.phase = np.mean([self._phase_fw, self._phase_bw], axis=0)
+        self.phase_spc = np.mean([self._phase_spc_fw, self._phase_spc_bw], axis=0)
+    
+    def _interpolate_phase(self, threshold, phase_spc, phase):
+        def thresh_helpher(phase_spc):
+            return np.abs(phase_spc) < threshold, lambda z: z.nonzero()[0]
+
+        below_thresh, index_function = thresh_helpher(phase_spc)
+        phase[below_thresh] = np.interp(index_function(below_thresh), index_function(~below_thresh), phase[~below_thresh])    
+        return phase
+    
+    def _lowres_phase(self, ifg, phase_ifg_length, zpd):
+        phase_ifg = self._create_phase_ifg(ifg, phase_ifg_length, zpd)
+        phase_spc = self._ftir_fft(phase_ifg, zpd)
+        phase = self._phase_of_spc(phase_spc)
+        return phase, phase_spc
+    
+    def _create_phase_ifg(self, ifg, phase_ifg_length, zpd):
+        phase_ifg_truncated = np.zeros_like(ifg)
+        phase_ifg_truncated[
+            int(np.ceil(zpd) - phase_ifg_length):int(np.ceil(zpd) + phase_ifg_length)
+        ] = ifg[
+            int(np.ceil(zpd) - phase_ifg_length):int(np.ceil(zpd) + phase_ifg_length)
+        ]
+
+        def generate_cosine_square_bell(ifg_length, zpd_apo, phase_ifg_length):
+            array = np.zeros(ifg_length)
+            for i in range(ifg_length):
+                distance = abs(i - zpd_apo)
+                if distance <= phase_ifg_length:
+                    cosine_value = np.cos(0.5 * np.pi * distance / phase_ifg_length)
+                    square_cosine_value = cosine_value ** 2
+                    array[i] = square_cosine_value
+            return array
+
+        phase_ifg = phase_ifg_truncated * generate_cosine_square_bell(len(phase_ifg_truncated), zpd, phase_ifg_length)
+        return phase_ifg
+    
+    def _ftir_fft(self, ifg, zpd):
+        ifg_packed = self._pack_ifg(ifg, zpd)
+        spc = np.fft.ifft(ifg_packed)[:int(len(ifg_packed)/2)]
+        return spc
+
+    def _pack_ifg(self, ifg, zpd):
+        ifg_packed = np.zeros(self._ifg_array_length)
+        ifg_packed[:int(len(ifg) - np.ceil(zpd))] = ifg[int(np.ceil(zpd)):]
+        ifg_packed[-int(np.ceil(zpd)):] = ifg[:int(np.ceil(zpd))]
+        return ifg_packed
+
+    def _phase_of_spc(self, spc):
+        return np.angle(spc) + np.pi   
+    
+    def ifg_to_spc(self):
+        self._spc_uncorr_fw = self._ftir_fft(self._ramp_ifg(self._ifg_fw, self._zpd_fw), self._zpd_fw)
+        self._spc_uncorr_bw = self._ftir_fft(self._ramp_ifg(self._ifg_bw, self._zpd_bw), self._zpd_bw)
+        self._phase_highres_fw = self._phase_of_spc(self._spc_uncorr_fw)
+        self._phase_highres_bw = self._phase_of_spc(self._spc_uncorr_bw)
+
+        if self.FT_params['phase_correction_mode'] == 'Mertz':
+            self.spc2_fw, self._spc2_imag_fw, self.spc2_complex_fw = self._mertz_correction(self._spc_uncorr_fw, self._phase_highres_fw, self._phase_fw)
+            self.spc2_bw, self._spc2_imag_bw, self.spc2_complex_bw = self._mertz_correction(self._spc_uncorr_bw, self._phase_highres_bw, self._phase_bw)
+
+            self.spc2 = np.mean([self._spc2_fw, self._spc2_bw], axis=0)
+            self.spc2_complex = np.mean([self._spc2_complex_fw, self._spc2_complex_bw], axis=0)
+    
+            
+    def _ramp_ifg(self, ifg, zpd):
+        def generate_ramp(ifg_length, zpd_ramp):
+            ramp_length = 2 * zpd_ramp
+            ramp_array = np.zeros(ifg_length)
+            slope = 1. / ramp_length
+            for i in range(ifg_length):
+                if i <= ramp_length:
+                    ramp_array[i] = i * slope
+                else:
+                    ramp_array[i] = 1
+            return ramp_array
+
+        ifg_ramped = ifg * generate_ramp(len(ifg), zpd)
+        return ifg_ramped        
+
+    def _mertz_correction(self, spc_uncorr, phase_highres, phase):
+        spc = np.abs(spc_uncorr) * np.cos(-phase + phase_highres)
+        spc_imag = np.abs(spc_uncorr) * np.sin(-phase + phase_highres)
+        spc_complex = spc_uncorr * np.exp(-1j * phase)
+        return spc, spc_imag, spc_complex
+    
+    
     def __init__(self, path, verbose=False, getspc=False, getifg=False, getdoubleifg=False, gettrm=False, getpha=False, getslices=False, filemode='hdd', streamdata=None):
         t1 = time.time()
         self.log = []
@@ -571,24 +814,23 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import sys
     #ttt = time.time()
-    #s = ftsreader(sys.argv[1], verbose=True, getspc=True, getifg=True)
-    #s = ftsreader('../Downloads/br20231129N2O148_focal.0', verbose=True, gettrm=True)
+    s = ftsreader(sys.argv[1], verbose=True, getspc=True, getifg=True)
     #s = ftsreader(sys.argv[1], verbose=True)#, getslices=True)
     #print(len(s.spc), len(s.ifg))
     #print('total\t%1.5f'%(time.time()-ttt))
-    #s.print_log()
-    #s.print_header()
+    s.print_log()
+    s.print_header()
     #print(s.get_header_par('RES'))
     #print(s.fs)
     #fig, (ax1, ax2) = plt.subplots(2)
-    #fig, ax1 = plt.subplots(1)
+    fig, ax1 = plt.subplots(1)
     #try:
     #    ax1.plot(s.ifg)
     #except: pass
-    #try:
-    #    ax1.plot(s.trmwvn, s.trm)
-    #except: pass
+    try:
+        ax1.plot(s.spcwvn, s.spc)
+    except: pass
     #try:
     #    ax2.plot(s.ifg)
     #except: pass
-    #plt.show()
+    plt.show()

@@ -342,30 +342,12 @@ class ftsreader():
 
     def get_datablocks(self, block):
         '''Read a datablock named <block> and retrieve x- and y-axis np.arrays from it.'''
-        #t = time.time()
-        #       self.log.append('Getting data blocks')
-        #print(block)
         datablocktype = block.split(' ')[-1]
-        #        if block == 'Data Block IgSm' or block == 'Data Block':
-        #            self.log.append('Getting ifg data block')
-        #            # crude estimate of opd axis, only for illustratiion purposes, zpd's not included in calculation, and triangular apod. assumption -> 0.9
-        #            #xax = np.linspace(0,2*0.9/float(self.header['Acquisition Parameters']['RES']), len(yax))
-        #        if block == 'Data Block SpSm':
-        #            self.log.append('Getting spc data block')
-        #            # calculate wavenumber axis for spectrum from frequencies of first and last point stored in header
-        #            xax = np.linspace(self.header['Data Parameters SpSm']['FXV'], self.header['Data Parameters SpSm']['LXV'], len(yax))
-        #        if block == 'Data Block ScSm':
-        #            self.log.append('Getting spc data block')
-        #            xax = np.linspace(self.header['Data Parameters ScSm']['FXV'], self.header['Data Parameters ScSm']['LXV'], len(yax))
-        #        if block == 'Data Block TrSm':
-        #            self.log.append('Getting trm data block')
-        #            xax = np.linspace(self.header['Data Parameters TrSm']['FXV'], self.header['Data Parameters TrSm']['LXV'], len(yax))
-        #       if block == 'Data Block PhSm':
         self.log.append('Getting '+datablocktype+' data block')
-        #print('get_datablocks\t%1.5f'%(time.time()-t))
-        ## sometimes the number of points defined by the block length is different from the reported NPT that is used from the header.
-        yax = self.get_block(self.search_block(block)['offset'], self.search_block(block)['length'])[:self.header['Data Parameters '+datablocktype]['NPT']]
-        #        xax = np.linspace(self.header[dataparamname]['FXV'], self.header[dataparamname]['LXV'], len(yax))
+        # sometimes the number of points defined by the block length is different from the NPT reported in header
+        # looks like in this case the data block should be limited to NPT
+        npt = self.header['Data Parameters '+datablocktype]['NPT']
+        yax = self.get_block(self.search_block(block)['offset'], self.search_block(block)['length'])[:npt]
         if datablocktype == 'IgSm':
             xax = None
         else:
@@ -554,6 +536,7 @@ class ftsreader():
             self.phase = np.mean([self._phase_fw, self._phase_bw], axis=0)
             
     def _normalize_ifg(self, ifg):
+        # watch out for odd NPT, there might be rounding issues here
         ifg -= np.mean(ifg[int(len(ifg)/2):])
         return ifg
     
@@ -564,7 +547,7 @@ class ftsreader():
             return np.argmax(np.abs(ifg)) 
         elif zpd_search_mode == 'parabola fit':
             zpd_absmax = np.argmax(np.abs(ifg))
-            return self._calc_parabola_vertex(
+            return self._calc_parabola(
                 zpd_absmax - 1, ifg[zpd_absmax - 1],
                 zpd_absmax, ifg[zpd_absmax],
                 zpd_absmax + 1, ifg[zpd_absmax + 1],
@@ -574,7 +557,7 @@ class ftsreader():
         else:
             print('No ZPD can be determined, please choose ZPD calculation method or give ZPD value directly!')
 
-    def _calc_parabola_vertex(self, x1, y1, x2, y2, x3, y3):
+    def _calc_parabola(self, x1, y1, x2, y2, x3, y3):
         denom = (x1 - x2) * (x1 - x3) * (x2 - x3)
         A = (x3 * (y2 - y1) + x2 * (y1 - y3) + x1 * (y3 - y2)) / denom
         B = (x3 * x3 * (y1 - y2) + x2 * x2 * (y3 - y1) + x1 * x1 * (y2 - y3)) / denom
@@ -583,8 +566,8 @@ class ftsreader():
             + x3 * x1 * (x3 - x1) * y2
             + x1 * x2 * (x1 - x2) * y3
         ) / denom
-        parabola_vertex = -B / (2 * A)
-        return parabola_vertex
+        parabola = -B / (2 * A)
+        return parabola
     
     
     def _calc_symmetry_zpd(self, ifg):
@@ -765,16 +748,21 @@ class ftsreader():
                 # get spc if requested
                 if getspc and self.has_block('Data Block SpSm'):
                     self.spcwvn, self.spc = self.get_datablocks('Data Block SpSm')
+                    self.has_spc = True
                 elif getspc and self.has_block('Data Block ScSm'):
                     self.log.append('Setting self.spc tp ScSm instead of SpSm')
                     self.spcwvn, self.spc = self.get_datablocks('Data Block ScSm')
+                    self.has_spc = True
                 else:
                     self.log.append('No Spectrum requested or not found ... skipping.')
+                    self.has_spc = False
                 # get transmission spc if requested
                 if gettrm and self.has_block('Data Block TrSm'):
                     self.trmwvn, self.trm = self.get_datablocks('Data Block TrSm')
+                    self.has_trm = True
                 else:
                     self.log.append('No Transmissionspectrum requested or not found ... skipping.')
+                    self.has_trm = False
                 # get ifg if requested
                 if getpha and self.has_block('Data Block PhSm'):
                     self.phawvn, self.pha = self.get_datablocks('Data Block PhSm')
@@ -783,18 +771,25 @@ class ftsreader():
                 # get ifg if requested
                 if getifg and self.has_block('Data Block IgSm'):
                     self.ifgopd, self.ifg = self.get_datablocks('Data Block IgSm')
+                    self.has_ifg = True
                 else:
                     self.log.append('No Interferogram requested or not found ... skipping.')
+                    self.has_ifg = False
                 # get two ifgs if requested
                 if getdoubleifg and (self.has_block('Data Block IgSm') and self.has_block('Data Block')):
                     self.ifgopd, self.ifg = self.get_datablocks('Data Block IgSm')
                     self.ifgopd2, self.ifg2 = self.get_datablocks('Data Block')
+                    self.has_difg = True
                 else:
                     self.log.append('No double interferogram requested or not found ... skipping.')
+                    self.has_difg = False
                 # try getting slices if requested
                 if getslices:
                     self.get_slices(path)
-                else: self.log.append('No slices requested or not found ... skipping.')
+                    self.has_slices = True
+                else: 
+                    self.log.append('No slices requested or not found ... skipping.')
+                    self.has_slices = False
                 if self.verbose and self.status:
                     self.log.append('Finished initializing FTS object.\n\n')
                     print('\n\tFinished initializing ftsreader object.')
@@ -807,30 +802,49 @@ class ftsreader():
             print('Error while processing '+path+' ... check self.log or do self.print_log()')
         #print('init\t%1.5f'%(time.time()-t1))
 
+def spc_figure(s):
+    fig, (ax1, ax2) = plt.subplots(2)
+    ax1.set_xlabel('Wavenumber [cm$^{-1}$]')
+    ax1.set_title('Spectrum: '+s.filename)
+    ax1.plot(s.spcwvn, s.spc, 'k-')
+    return fig
 
+def ifg_figure(s):
+    fig, ax1 = plt.subplots(1)
+    ax1.set_title('Interferogram: '+s.filename)
+    ax1.set_xlabel('Interferogram points')
+    ax1.plot(s.ifg, 'k-')
+    return fig
+
+def ifg_spc_figure(s):
+    fig, (ax1, ax2) = plt.subplots(2)
+    ax1.set_title(s.filename)
+    ax1.set_xlabel('Interferogram points')
+    ax2.set_xlabel('Wavenumber [cm$^{-1}$]')
+    ax1.set_ylabel('Interferogram')
+    ax2.set_ylabel('Spectrum')
+    ax1.plot(s.ifg, 'k-')
+    ax2.plot(s.spcwvn, s.spc, 'k-')
+    return fig
 
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import sys
-    #ttt = time.time()
-    s = ftsreader(sys.argv[1], verbose=True, getspc=True, getifg=True)
-    #s = ftsreader(sys.argv[1], verbose=True)#, getslices=True)
-    #print(len(s.spc), len(s.ifg))
-    #print('total\t%1.5f'%(time.time()-ttt))
-    s.print_log()
-    s.print_header()
-    #print(s.get_header_par('RES'))
-    #print(s.fs)
-    #fig, (ax1, ax2) = plt.subplots(2)
-    fig, ax1 = plt.subplots(1)
-    #try:
-    #    ax1.plot(s.ifg)
-    #except: pass
     try:
-        ax1.plot(s.spcwvn, s.spc)
-    except: pass
-    #try:
-    #    ax2.plot(s.ifg)
-    #except: pass
-    plt.show()
+        s = ftsreader(sys.argv[1], verbose=True, getspc=True, getifg=True)
+        s.print_log()
+        s.print_header()
+        if s.has_ifg and s.has_spc:
+            fig = ifg_spc_figure(s)
+            plt.show()
+        elif s.has_ifg:
+            fig = ifg_figure(s)
+            plt.show()
+        elif s.has_spc:
+            fig = spc_figure(s)
+            plt.show()
+        else:
+            pass
+    except Exception as e:
+        print(e)

@@ -9,7 +9,7 @@ from __future__ import print_function, division
 import os, sys, struct, io, time
 import numpy as np
 import matplotlib.pyplot as plt
-
+import datetime as dt
 
 class ftsreader():
     '''Python class to interact with FTS files.\n\n
@@ -485,7 +485,9 @@ class ftsreader():
         else:
             return False
     
-    
+    def get_time_from_ifg_header(self):
+        return dt.datetime.strptime(self.header['Data Parameters IgSm']['DAT']+' '+self.header['Data Parameters IgSm']['TIM'].replace(' (UTC+0)', ''), '%d/%m/%Y %H:%M:%S.%f')
+
     def set_FT_params(
             self,
             laser_wvn=None,

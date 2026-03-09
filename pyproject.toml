@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ftsreader"
+version = "2026.03.09"
+description = "A native Python package to handle binary interferograms and spectra from COTS FTIR spectrometers"
+readme = "README.md"
+requires-python = ">=3.8"
+license =  "GPL-3.0"
+authors = [{ name="Matthias Buschmann", email="ftsreader@matthias-buschmann.org" } ]
+
+dependencies = [
+  "numpy>=1.26",
+  "matplotlib>=3.10",
+]
+
+[project.urls]
+Homepage = "https://github.com/mbuschmann/ftsreader"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

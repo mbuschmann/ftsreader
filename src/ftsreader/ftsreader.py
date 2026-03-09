@@ -1,6 +1,3 @@
-#!/usr/bin/python3
-# coding: utf8
-
 '''
 A class providing an interface for accessing header, interferogram and spectrum data blocks from a Fourier-Transform Infrared Spectrometer (FTS).
 '''
@@ -13,7 +10,7 @@ import datetime as dt
 
 class ftsreader():
     '''Python class to interact with FTS files.\n\n
-    Version 2019-08-15\n\n
+    Version 2026-03-09\n\n
     Usage:
         ftsreaderobject = ftsreader(path, verbose=False, getspc=False, getifg=False)
 
@@ -895,6 +892,15 @@ if __name__ == '__main__':
             plt.show()
         elif s.has_ifg:
             fig = s.ifg_figure()
+            # calculate spectrum from ifg
+            # s.calculate_spectrum()
+            # s.set_FT_params(lfq=3999.88679054718, hfq=10999.748938676452),
+            # s.init_FT()
+            # s.determine_phase()
+            # s.ifg_to_spc()
+            # s.apply_frequency_limits()
+            # fig2 = s.spc_figure(plot_calculated_spc=True)
+            # print(len(s.spc2))
             plt.show()
         elif s.has_spc:
             fig = s.spc_figure()
